@@ -1,3 +1,65 @@
+# Erlang benchmark quick start guide
+
+There are 85 exercises in the exercism-erlang repo, running this benchmark with claude
+costs around $1.5. The benchmark resulted in 100% pass first try, 100% well format.
+The exercism examples are too easy for Claude, we need to create harder examples.
+
+test_cases: 85
+model: claude-3-5-sonnet-20241022
+edit_format: diff
+commit_hash: e601682-dirty
+pass_rate_1: 100.0
+percent_cases_well_formed: 100.0
+error_outputs: 0
+num_malformed_responses: 0
+num_with_malformed_responses: 0
+user_asks: 5
+lazy_comments: 1
+syntax_errors: 0
+indentation_errors: 0
+exhausted_context_windows: 0
+test_timeouts: 0
+command: aider --model claude-3-5-sonnet-20241022
+date: 2024-11-06
+versions: 0.62.1.dev
+seconds_per_case: 10.4
+total_cost: 1.5641
+
+```
+# Clone the aider repo
+git clone git@github.com:frazze-jobb/aider.git
+
+# Create the scratch dir to hold benchmarking results inside the main aider dir:
+cd aider
+mkdir tmp.benchmarks
+
+# Clone the exercism repo
+git clone git@github.com:exercism/erlang.git
+
+# Copy the practice exercises into the benchmark scratch dir
+cp -rp erlang/exercises/practice tmp.benchmarks/exercism-erlang
+
+# Build the docker container
+./benchmark/docker_build.sh
+
+# Set your api keys
+export ANTHROPIC_API_KEY=<your-key>
+export OPENAI_API_KEY=<your-key>
+
+# Launch the docker container
+./benchmark/docker.sh
+
+# Inside the container, install aider as a development build.
+# This way you're running the code that you cloned above, including any local changes.
+pip install -e .
+
+# Set the path variable so that it can find rebar3
+export PATH=$PATH:${HOME}/.cache/rebar3/bin
+
+# Run the benchmark:
+./benchmark/benchmark.py first_test -m claude-3-5-sonnet-20241022 -l erlang -e diff --exercises-dir exercism-erlang --threads 10
+```
+
 
 # Aider code editing benchmark harness
 

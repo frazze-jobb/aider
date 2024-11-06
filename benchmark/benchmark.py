@@ -124,6 +124,7 @@ def main(
     dirnames: Optional[List[str]] = typer.Argument(None, help="Directory names"),
     graphs: bool = typer.Option(False, "--graphs", help="Generate graphs"),
     model: str = typer.Option("gpt-3.5-turbo", "--model", "-m", help="Model name"),
+    programming_language: str = typer.Option("python", "--programming-language", "-l", help="Programming language"),
     edit_format: str = typer.Option(None, "--edit-format", "-e", help="Edit format"),
     editor_model: str = typer.Option(None, "--editor-model", help="Editor model name"),
     editor_edit_format: str = typer.Option(None, "--editor-edit-format", help="Editor edit format"),
@@ -237,6 +238,7 @@ def main(
                 original_dname,
                 dirname / testname,
                 model,
+                programming_language,
                 edit_format,
                 tries,
                 no_unit_tests,
@@ -258,6 +260,7 @@ def main(
                 original_dname,
                 dirname / testname,
                 model,
+                programming_language,
                 edit_format,
                 tries,
                 no_unit_tests,
@@ -516,6 +519,7 @@ def run_test_real(
     original_dname,
     testdir,
     model_name,
+    programming_language,
     edit_format,
     tries,
     no_unit_tests,
@@ -545,19 +549,36 @@ def run_test_real(
             return
 
     fnames = []
-    for fname in testdir.glob("*"):
-        if (
-            "test" not in fname.name
-            and fname.is_file()
-            and fname.name[0] != "."
-            and fname.suffix == ".py"
-        ):
-            fnames.append(fname)
+    if programming_language == "erlang":
+        for fname in testdir.glob("src/*"):
+            if (
+                "test" not in fname.name
+                and fname.is_file()
+                and fname.name[0] != "."
+                and fname.suffix == ".erl"
+            ):
+                fnames.append(fname)
 
-            # restore the original file, in case we interrupted a prev run
-            # after it had saved changes
-            original_fname = original_dname / testdir.name / fname.name
-            shutil.copy(original_fname, fname)
+                # restore the original file, in case we interrupted a prev run
+                # after it had saved changes
+                original_fname = original_dname / testdir.name / "src" / fname.name
+                shutil.copy(original_fname, fname)
+
+    elif programming_language == "python":
+        for fname in testdir.glob("*"):
+            if (
+                "test" not in fname.name
+                and fname.is_file()
+                and fname.name[0] != "."
+                and fname.suffix == ".py"
+            ):
+                fnames.append(fname)
+
+                # restore the original file, in case we interrupted a prev run
+                # after it had saved changes
+                original_fname = original_dname / testdir.name / fname.name
+                shutil.copy(original_fname, fname)
+
 
     file_list = " ".join(fname.name for fname in fnames)
 
@@ -571,7 +592,7 @@ def run_test_real(
     if instructions_append.exists():
         instructions += instructions_append.read_text()
 
-    instructions += prompts.instructions_addendum.format(file_list=file_list)
+    instructions += prompts.instructions_addendum.format(programming_language=programming_language, file_list=file_list)
 
     io = InputOutput(
         pretty=True,
@@ -636,7 +657,8 @@ def run_test_real(
         dur += time.time() - start
 
         if not no_aider:
-            pat = r"^[+]? *[#].* [.][.][.] "
+            comment = dict(python = "#", erlang = "%")[programming_language]
+            pat = r"^[+]? *["+comment+"].* [.][.][.] "
             # Count the number of lines that match pat in response
             dump(response)
             lazy_comments += len(re.findall(pat, response, re.MULTILINE))
@@ -649,7 +671,7 @@ def run_test_real(
             break
 
         try:
-            errors = run_unit_tests(testdir, history_fname)
+            errors = run_unit_tests(testdir, history_fname, programming_language)
         except subprocess.TimeoutExpired:
             errors = "Tests timed out!"
             timeouts += 1
@@ -665,8 +687,11 @@ def run_test_real(
 
         errors = errors.splitlines()
 
-        syntax_errors += sum(1 for line in errors if line.startswith("SyntaxError"))
-        indentation_errors += sum(1 for line in errors if line.startswith("IndentationError"))
+        if programming_language == "erlang":
+            syntax_errors += sum(1 for line in errors if line.endsWith(".erl failed"))
+        else:
+            syntax_errors += sum(1 for line in errors if line.startswith("SyntaxError"))
+        indentation_errors += sum(1 for line in errors if line.startswith("IndentationError")) # not applicable
 
         print(errors[-1])
         errors = errors[:50]
@@ -678,6 +703,7 @@ def run_test_real(
         testdir=str(testdir),
         testcase=testdir.name,
         model=main_model.name,
+        programming_language=programming_language,
         edit_format=edit_format,
         tests_outcomes=test_outcomes,
         cost=coder.total_cost,
@@ -708,9 +734,8 @@ def run_test_real(
 
     return results
 
-
-def run_unit_tests(testdir, history_fname):
-    command = [
+def get_command(programming_language, testdir):
+    return dict(python = [
         "python",
         "-m",
         "unittest",
@@ -720,8 +745,10 @@ def run_unit_tests(testdir, history_fname):
         "-t",
         str(testdir),
         "-p",
-        "*_test.py",
-    ]
+        "*_test.py",],
+        erlang = ["rebar3", "eunit"])[programming_language]
+def run_unit_tests(testdir, history_fname, programming_language):
+    command = get_command(programming_language, testdir)
     print(" ".join(command))
 
     timeout = 60
